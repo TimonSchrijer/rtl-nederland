@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+
+    /* RTL Nederland brand colors */
+    --rtl-primary: 210 100% 40%;
+    --rtl-secondary: 200 100% 50%;
+    --rtl-tertiary: 25 100% 50%;
+    --rtl-link: 210 80% 45%;
+    --rtl-link-hover: 210 90% 35%;
+    --rtl-primary-foreground: 0 0% 100%;
+    --rtl-secondary-foreground: 0 0% 100%;
+    --rtl-tertiary-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+
+    /* RTL Nederland brand colors - adjusted for dark mode */
+    --rtl-primary: 25 99% 57%; /* Keep the same orange */
+    --rtl-primary-foreground: 0 0% 100%;
+    --rtl-secondary: 198 99% 54%; /* Keep the same light blue */
+    --rtl-secondary-foreground: 0 0% 100%;
+    --rtl-tertiary: 217 94% 49%; /* Keep the same dark blue */
+    --rtl-tertiary-foreground: 0 0% 100%;
+  }
+
+  /* Update link styles to be more selective */
+  /* Apply vibrant colors only to regular text links */
+  a:not([class]),                          /* Links with no classes */
+  a.text-link,                             /* Links explicitly marked as text links */
+  article a:not(.btn):not(.button),        /* Content links that aren't buttons */
+  .prose a:not(.btn):not(.button),         /* Links in prose content */
+  p > a:not(.btn):not(.button) {          /* Links within paragraphs that aren't buttons */
+    color: hsl(var(--rtl-link));
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    transition: color 0.2s ease;
+  }
+
+  /* Hover state for text links */
+  a:not([class]):hover,
+  a.text-link:hover,
+  article a:not(.btn):not(.button):hover,
+  .prose a:not(.btn):not(.button):hover,
+  p > a:not(.btn):not(.button):hover {
+    color: hsl(var(--rtl-link-hover));
+  }
+
+  /* Reset styles for buttons and highlighted elements */
+  a.btn,
+  a.button,
+  [class*="bg-"] a,
+  [class*="background-"] a,
+  [class*="highlight"] a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
