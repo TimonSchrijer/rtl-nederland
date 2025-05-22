@@ -41,7 +41,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="nl" suppressHydrationWarning>
-      <head />
+      <head>
+        <link rel="icon" href="/favicon.png" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0975F3" />
+      </head>
       <body className={inter.className}>
         <Providers>
           <div className="flex min-h-screen flex-col">
