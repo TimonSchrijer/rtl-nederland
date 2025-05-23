@@ -298,9 +298,8 @@ export default function PressReleasePage() {
             <ArticleContent
               content={pressRelease.content}
               className="mt-8"
-              // Don't pass videoId here since we're showing it in the hero
-              // videoId={videoId}
-              // videoTitle={videoTitle}
+              // Skip video rendering since we're showing it in the hero
+              skipVideoRendering={!!videoId}
             />
           </div>
         </div>

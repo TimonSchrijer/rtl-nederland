@@ -11,6 +11,7 @@ interface ArticleContentProps {
   className?: string
   videoId?: string // Optional video ID if provided directly
   videoTitle?: string // Optional video title
+  skipVideoRendering?: boolean // Whether to skip rendering videos in the content
 }
 
 // Function to extract YouTube video ID from various YouTube URL formats
@@ -28,7 +29,7 @@ function extractYouTubeId(url: string): string | null {
   return match && match[2].length === 11 ? match[2] : null
 }
 
-export function ArticleContent({ content, className = "", videoId: propVideoId, videoTitle }: ArticleContentProps) {
+export function ArticleContent({ content, className = "", videoId: propVideoId, videoTitle, skipVideoRendering = false }: ArticleContentProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const sanitizedContent = sanitizeHtml(content)
   const [extractedVideoId, setExtractedVideoId] = React.useState<string | null>(null)
@@ -40,7 +41,7 @@ export function ArticleContent({ content, className = "", videoId: propVideoId, 
 
   // Extract YouTube video links from content
   useEffect(() => {
-    if (!contentRef.current || finalVideoId) return
+    if (!contentRef.current || finalVideoId || skipVideoRendering) return
 
     try {
       const container = contentRef.current
@@ -68,7 +69,7 @@ export function ArticleContent({ content, className = "", videoId: propVideoId, 
     } catch (error) {
       console.error("Error extracting YouTube links:", error)
     }
-  }, [sanitizedContent, finalVideoId])
+  }, [sanitizedContent, finalVideoId, skipVideoRendering])
 
   // Apply additional formatting and enhancements after the content is rendered
   useEffect(() => {
@@ -337,8 +338,8 @@ export function ArticleContent({ content, className = "", videoId: propVideoId, 
 
   return (
     <div className={`${className}`}>
-      {/* Render YouTube embed if we have a video ID */}
-      {finalVideoId && (
+      {/* Render YouTube embed if we have a video ID and we're not skipping video rendering */}
+      {finalVideoId && !skipVideoRendering && (
         <div className="mb-8">
           <YouTubeEmbed videoId={finalVideoId} title={finalVideoTitle} className="mb-2" />
           <p className="text-sm text-muted-foreground text-center">{finalVideoTitle}</p>
