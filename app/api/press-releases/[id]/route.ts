@@ -1,138 +1,123 @@
 import { NextResponse } from "next/server"
 import { kv } from "@vercel/kv"
 
-// Cache TTL in seconds (1 minute)
-const CACHE_TTL = 60
+// Cache TTL in seconds (5 minutes)
+const CACHE_TTL = 300
+// Stale-while-revalidate window in seconds (30 seconds)
+const SWR_WINDOW = 30
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+// Simple in-memory cache for local development
+const memoryCache = new Map<string, { data: any; timestamp: number }>()
+
+// Helper function to determine if we can use Vercel KV
+async function canUseVercelKV() {
+  try {
+    // Try to access KV to check if it's properly configured
+    await kv.ping()
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Helper function to get cache data
+async function getCacheData(key: string) {
+  try {
+    // Try Vercel KV first
+    if (await canUseVercelKV()) {
+      return await kv.get<{ data: any; timestamp: number }>(key)
+    }
+    // Fall back to memory cache
+    return memoryCache.get(key)
+  } catch {
+    // If anything goes wrong, fall back to memory cache
+    return memoryCache.get(key)
+  }
+}
+
+// Helper function to set cache data
+async function setCacheData(key: string, value: { data: any; timestamp: number }, ttl: number) {
+  try {
+    // Try Vercel KV first
+    if (await canUseVercelKV()) {
+      await kv.set(key, value, { ex: ttl })
+    }
+    // Fall back to memory cache
+    memoryCache.set(key, value)
+  } catch {
+    // If anything goes wrong, fall back to memory cache
+    memoryCache.set(key, value)
+  }
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
     const { id } = params
-    const noCache = new URL(request.url).searchParams.get("no_cache") === "true"
+    const url = new URL(request.url)
+    const noCache = url.searchParams.get("no_cache") === "true"
 
     // Create a cache key for this press release
     const cacheKey = `press-release:${id}`
 
-    // Try to get from cache first (unless no_cache is true)
-    let pressRelease
+    // Try to get data from cache first (unless no_cache is true)
+    let data
+    let isStale = false
     if (!noCache) {
-      try {
-        pressRelease = await kv.get(cacheKey)
-
-        // If we have cached data, return it immediately with stale-while-revalidate
-        if (pressRelease) {
-          // Start background revalidation
-          revalidateData(cacheKey, id).catch(console.error)
-
-          return NextResponse.json(pressRelease, {
-            status: 200,
-            headers: {
-              "Cache-Control": "no-cache, no-store, must-revalidate",
-              "Pragma": "no-cache",
-              "Expires": "0",
-              "X-Cache": "HIT",
-            },
-          })
+      const cacheData = await getCacheData(cacheKey)
+      
+      if (cacheData) {
+        const age = Math.floor((Date.now() - cacheData.timestamp) / 1000)
+        isStale = age >= CACHE_TTL
+        
+        // Use cached data if within TTL or within SWR window
+        if (!isStale || age < CACHE_TTL + SWR_WINDOW) {
+          data = cacheData.data
+          
+          // If stale, trigger background revalidation
+          if (isStale) {
+            revalidateData(cacheKey, id).catch(console.error)
+          }
         }
-      } catch (cacheError) {
-        console.warn("Failed to get from cache:", cacheError)
       }
     }
 
-    // If not in cache or no_cache is true, try to fetch directly first
-    try {
+    // If we don't have usable cached data, fetch from RTL API
+    if (!data) {
       const response = await fetch(`https://www.rtl.nl/data/press-releases/${id}`, {
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        cache: noCache ? "no-store" : "no-cache",
+        cache: "no-store",
       })
 
-      if (response.ok) {
-        pressRelease = await response.json()
-
-        // Cache the response (unless no_cache is true)
-        if (!noCache) {
-          try {
-            await kv.set(cacheKey, pressRelease, { ex: CACHE_TTL })
-          } catch (cacheError) {
-            console.warn("Failed to store in cache:", cacheError)
-          }
+      if (!response.ok) {
+        if (response.status === 404) {
+          return NextResponse.json({ error: "Press release not found" }, { status: 404 })
         }
-
-        return NextResponse.json(pressRelease, {
-          status: 200,
-          headers: {
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "X-Cache": "MISS",
-          },
-        })
+        throw new Error(`RTL API returned status: ${response.status}`)
       }
-    } catch (error) {
-      console.warn("Failed to fetch press release directly:", error)
-    }
 
-    // If direct fetch fails, try to get all press releases and find the one with matching ID
-    // First check if we have a cached version of all press releases
-    const allReleasesCacheKey = "press-releases:0:100"
-    let allReleases
+      data = await response.json()
 
-    try {
-      allReleases = await kv.get(allReleasesCacheKey)
-      if (!allReleases) {
-        // If not in cache, fetch from API
-        const allReleasesResponse = await fetch(`https://www.rtl.nl/data/press-releases?offset=0&limit=100`, {
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
-        })
-
-        if (!allReleasesResponse.ok) {
-          throw new Error(`RTL API returned status: ${allReleasesResponse.status}`)
-        }
-
-        allReleases = await allReleasesResponse.json()
-
-        // Cache the all releases response
-        try {
-          await kv.set(allReleasesCacheKey, allReleases, { ex: CACHE_TTL })
-        } catch (cacheError) {
-          console.warn("Failed to store all releases in cache:", cacheError)
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching all releases:", error)
-      return NextResponse.json({ error: "Press release not found" }, { status: 404 })
-    }
-
-    // Find the press release in the list
-    const releases = Array.isArray(allReleases) ? allReleases : allReleases.items || []
-    pressRelease = releases.find((release: any) => release.id.toString() === id)
-
-    if (!pressRelease) {
-      return NextResponse.json({ error: "Press release not found" }, { status: 404 })
-    }
-
-    // Cache the individual press release
-    if (!noCache) {
-      try {
-        await kv.set(cacheKey, pressRelease, { ex: CACHE_TTL })
-      } catch (cacheError) {
-        console.warn("Failed to store press release in cache:", cacheError)
+      // Cache the fresh data (unless no_cache is true)
+      if (!noCache) {
+        await setCacheData(cacheKey, {
+          data,
+          timestamp: Date.now()
+        }, CACHE_TTL + SWR_WINDOW)
       }
     }
 
-    return NextResponse.json(pressRelease, {
+    // Return the data with appropriate cache headers
+    return NextResponse.json(data, {
       status: 200,
       headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0",
-        "X-Cache": "MISS",
+        "Cache-Control": isStale ? "no-cache" : `max-age=${CACHE_TTL}, stale-while-revalidate=${SWR_WINDOW}`,
+        "X-Cache": data ? (isStale ? "STALE" : "HIT") : "MISS",
       },
     })
   } catch (error) {
@@ -144,7 +129,6 @@ export async function GET(request: Request, { params }: { params: { id: string }
 // Helper function to revalidate data in the background
 async function revalidateData(cacheKey: string, id: string) {
   try {
-    // Try direct fetch first
     const response = await fetch(`https://www.rtl.nl/data/press-releases/${id}`, {
       headers: {
         Accept: "application/json",
@@ -153,32 +137,17 @@ async function revalidateData(cacheKey: string, id: string) {
       cache: "no-store",
     })
 
-    if (response.ok) {
-      const freshData = await response.json()
-      await kv.set(cacheKey, freshData, { ex: CACHE_TTL })
-      return
+    if (!response.ok) {
+      throw new Error(`RTL API returned status: ${response.status}`)
     }
 
-    // If direct fetch fails, try getting from all releases
-    const allReleasesResponse = await fetch(`https://www.rtl.nl/data/press-releases?offset=0&limit=100`, {
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    })
+    const freshData = await response.json()
 
-    if (!allReleasesResponse.ok) {
-      throw new Error(`RTL API returned status: ${allReleasesResponse.status}`)
-    }
-
-    const allReleases = await allReleasesResponse.json()
-    const releases = Array.isArray(allReleases) ? allReleases : allReleases.items || []
-    const pressRelease = releases.find((release: any) => release.id.toString() === id)
-
-    if (pressRelease) {
-      await kv.set(cacheKey, pressRelease, { ex: CACHE_TTL })
-    }
+    // Store the fresh data with a new timestamp
+    await setCacheData(cacheKey, {
+      data: freshData,
+      timestamp: Date.now()
+    }, CACHE_TTL + SWR_WINDOW)
   } catch (error) {
     console.error("Failed to revalidate data:", error)
   }
