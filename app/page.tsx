@@ -8,10 +8,10 @@ import { ErrorModal } from "@/components/error-modal"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useLogo } from "@/contexts/logo-context"
 import { DEFAULT_COLOR_SCHEME } from "@/components/rtl-logo"
-import { DynamicThemeDemo } from "@/components/dynamic-theme-demo"
+import type { PressRelease } from "@/lib/types"
 
 export default function Home() {
-  const [pressReleases, setPressReleases] = useState([])
+  const [pressReleases, setPressReleases] = useState<PressRelease[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [errorMessage, setErrorMessage] = useState(
@@ -61,7 +61,7 @@ export default function Home() {
 
   // Get the highlighted press release (first one in the list)
   const highlightedPressRelease = pressReleases.length > 0 ? pressReleases[0] : null
-  const highlightedPressReleaseId = highlightedPressRelease ? highlightedPressRelease.id : null
+  const highlightedPressReleaseId = highlightedPressRelease?.id
 
   return (
     <div className="flex flex-col gap-16 pb-16">
@@ -99,11 +99,6 @@ export default function Home() {
           />
         </>
       )}
-
-      {/* Add the dynamic theme demo */}
-      <div className="container mb-16">
-        <DynamicThemeDemo />
-      </div>
 
       {/* Error Modal */}
       <ErrorModal
