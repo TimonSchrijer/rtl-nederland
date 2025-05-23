@@ -55,7 +55,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params
+    const id = await params.id
     const url = new URL(request.url)
     const noCache = url.searchParams.get("no_cache") === "true"
 
