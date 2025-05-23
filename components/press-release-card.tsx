@@ -25,54 +25,71 @@ export function PressReleaseCard({
   const debounceTimer = useRef<NodeJS.Timeout | null>(null)
   const hasUpdatedColors = useRef<boolean>(false)
 
-  // Update logo colors when this card is hovered, but only for certain cards
-  // and with debounce to prevent too many updates
-  const handleMouseEnter = () => {
-    // Skip color updates if disabled
-    if (disableColorUpdate) return
-
-    // Only update colors for the first card in each row (0, 3, 6, etc.)
-    if (!isActive && index % 3 === 0) {
-      // Clear any existing timer
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current)
-      }
-
-      // Set a new timer to debounce the color update
-      debounceTimer.current = setTimeout(() => {
-        try {
-          // Get the best quality image available
-          const imageUrl =
-            pressRelease.mainImage?.landscape ||
-            pressRelease.mainImage?.medium16x9 ||
-            pressRelease.mainImage?.article960x540 ||
-            pressRelease.mainImage?.small ||
-            pressRelease.image ||
-            "/rtl-nederland-press.png"
-
-          if (imageUrl && !hasUpdatedColors.current) {
-            hasUpdatedColors.current = true
-            updateColorsFromImage(imageUrl).catch((error) => {
-              console.error("Failed to update colors from card image:", error)
-              hasUpdatedColors.current = false
-            })
-          }
-        } catch (error) {
-          console.error("Error in card hover color update:", error)
-          hasUpdatedColors.current = false
-        }
-      }, 300) // 300ms debounce
-    }
+  // Get the image URL with fallbacks
+  const getYouTubeThumbnail = (videoId: string) => {
+    return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
   }
 
-  // Get the image URL with fallbacks
-  const imageUrl =
-    pressRelease.mainImage?.landscape ||
-    pressRelease.mainImage?.medium16x9 ||
-    pressRelease.mainImage?.article960x540 ||
-    pressRelease.mainImage?.small ||
-    pressRelease.image ||
-    "/rtl-nederland-press.png"
+  // Extract YouTube video ID from various possible formats
+  const getYouTubeId = (video: any): string | null => {
+    if (!video) return null
+    
+    // Skip if the URL is already a YouTube thumbnail
+    if (typeof video === 'string' && video.includes('/vi/') && video.includes('.jpg')) {
+      return null
+    }
+    
+    if (typeof video === 'string') {
+      // Try to extract ID from URL
+      const match = video.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i)
+      // Validate that we have a proper video ID (11 characters)
+      if (match?.[1] && match[1].length === 11 && !match[1].includes('.')) {
+        return match[1]
+      }
+      return null
+    }
+    
+    if (typeof video === 'object' && video !== null) {
+      if (video.youtube && typeof video.youtube === 'string' && video.youtube.length === 11) {
+        return video.youtube
+      }
+      if (video.url) {
+        const match = video.url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i)
+        // Validate that we have a proper video ID (11 characters)
+        if (match?.[1] && match[1].length === 11 && !match[1].includes('.')) {
+          return match[1]
+        }
+      }
+    }
+    return null
+  }
+
+  // Get the best available image URL
+  const imageUrl = (() => {
+    // First try main image in various formats, skipping blob: URLs
+    const mainImageUrl = Object.entries(pressRelease.mainImage || {}).reduce((acc, [key, value]) => {
+      if (acc) return acc // If we already found a valid URL, keep it
+      if (!value || typeof value !== 'string') return acc // Skip if not a string
+      if (value.startsWith('blob:')) return acc // Skip blob: URLs
+      if (['landscape', 'medium16x9', 'article960x540', 'small'].includes(key)) return value
+      return acc
+    }, '')
+
+    if (mainImageUrl) return mainImageUrl
+
+    // If no main image, try legacy image field
+    if (pressRelease.image && !pressRelease.image.startsWith('blob:')) return pressRelease.image
+
+    // If no image but has video, try to get YouTube thumbnail
+    const videoId = getYouTubeId(pressRelease.mainVideo) || 
+      getYouTubeId(pressRelease.video) || 
+      (pressRelease.videoId && typeof pressRelease.videoId === 'string' && pressRelease.videoId.length === 11 ? pressRelease.videoId : null)
+
+    if (videoId) return getYouTubeThumbnail(videoId)
+
+    // Fallback to default image
+    return "/rtl-nederland-press.png"
+  })()
 
   // Get the date to display with priority order:
   // 1. Use the formatted date from datePosted if available
@@ -99,6 +116,37 @@ export function PressReleaseCard({
   // Get category string using the shared helper function
   const category = getCategoryString(pressRelease.category)
 
+  // Update logo colors when this card is hovered, but only for certain cards
+  // and with debounce to prevent too many updates
+  const handleMouseEnter = () => {
+    // Skip color updates if disabled
+    if (disableColorUpdate) return
+
+    // Only update colors for the first card in each row (0, 3, 6, etc.)
+    if (!isActive && index % 3 === 0) {
+      // Clear any existing timer
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+
+      // Set a new timer to debounce the color update
+      debounceTimer.current = setTimeout(() => {
+        try {
+          if (imageUrl && !hasUpdatedColors.current) {
+            hasUpdatedColors.current = true
+            updateColorsFromImage(imageUrl).catch((error) => {
+              console.error("Failed to update colors from card image:", error)
+              hasUpdatedColors.current = false
+            })
+          }
+        } catch (error) {
+          console.error("Error in card hover color update:", error)
+          hasUpdatedColors.current = false
+        }
+      }, 300) // 300ms debounce
+    }
+  }
+
   return (
     <Link
       href={`/press-release/${pressRelease.id}`}
@@ -112,6 +160,7 @@ export function PressReleaseCard({
           alt={pressRelease.title}
           className="w-full h-full transition-transform duration-300 group-hover:scale-105"
           fallbackSrc="/rtl-fallback-image.png"
+          priority={index < 6} // Set priority for the first 6 cards that are likely above the fold
         />
         {pressRelease.mainImage?.label && (
           <div className="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-2 py-1">
@@ -120,10 +169,10 @@ export function PressReleaseCard({
         )}
       </div>
 
-      <div className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-col flex-grow p-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
           <div className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
+            <Calendar className="h-4 w-4" />
             <span>{displayDate}</span>
           </div>
           {category && (
@@ -137,17 +186,17 @@ export function PressReleaseCard({
                 window.location.href = `/tag/${encodeURIComponent(normalizedCategory)}`
               }}
             >
-              <Tag className="h-3 w-3" />
+              <Tag className="h-4 w-4" />
               <span className="underline-offset-2 hover:underline">{category}</span>
             </div>
           )}
         </div>
 
-        <h3 className="line-clamp-2 text-lg font-semibold group-hover:text-rtl-primary transition-colors">
+        <h2 className="text-lg font-semibold line-clamp-2 mb-2 group-hover:text-rtl-primary transition-colors">
           {pressRelease.title}
-        </h3>
+        </h2>
 
-        <p className="line-clamp-3 text-sm text-muted-foreground">{pressRelease.excerpt}</p>
+        <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{pressRelease.excerpt}</p>
       </div>
     </Link>
   )
