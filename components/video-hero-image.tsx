@@ -13,6 +13,11 @@ interface VideoHeroImageProps {
   className?: string
 }
 
+// Helper function to get YouTube thumbnail URL
+function getYouTubeThumbnail(videoId: string): string {
+  return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+}
+
 export function VideoHeroImage({
   imageUrl,
   imageAlt,
@@ -22,10 +27,16 @@ export function VideoHeroImage({
 }: VideoHeroImageProps) {
   const [showVideo, setShowVideo] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [thumbnailError, setThumbnailError] = useState(false)
 
   const handleImageClick = () => {
     setShowVideo(true)
   }
+
+  // Skip blob URLs and use YouTube thumbnail as primary source if available
+  const effectiveImageUrl = videoId 
+    ? getYouTubeThumbnail(videoId) 
+    : (!imageUrl || imageUrl.startsWith('blob:') ? "" : imageUrl)
 
   return (
     <div
@@ -47,10 +58,12 @@ export function VideoHeroImage({
               style={{ transform: isHovered ? "scale(1.05)" : "scale(1)" }}
             >
               <SafeImage
-                src={imageUrl}
+                src={effectiveImageUrl}
                 alt={imageAlt}
                 className="w-full h-full object-cover"
-                fallbackSrc="/rtl-fallback-image.png"
+                fallbackSrc={getYouTubeThumbnail(videoId)}
+                priority={true}
+                onError={() => setThumbnailError(true)}
               />
             </div>
 

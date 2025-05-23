@@ -14,11 +14,12 @@ import { SafeImage } from "@/components/safe-image"
 import { ArticleContent } from "@/components/article-content"
 import { VideoHeroImage } from "@/components/video-hero-image"
 import { ShareDialog } from "@/components/share-dialog"
+import type { PressRelease } from "@/lib/types"
 
 export default function PressReleasePage() {
   const params = useParams()
   const router = useRouter()
-  const [pressRelease, setPressRelease] = useState(null)
+  const [pressRelease, setPressRelease] = useState<PressRelease | null>(null)
   const [videoId, setVideoId] = useState<string | null>(null)
   const [videoTitle, setVideoTitle] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -154,14 +155,32 @@ export default function PressReleasePage() {
     return null // Let Next.js handle the not-found case
   }
 
-  // Get the image URL with fallbacks
-  const imageUrl = pressRelease
-    ? pressRelease.mainImage?.article1920x1080 ||
-      pressRelease.mainImage?.landscape ||
-      pressRelease.mainImage?.medium16x9 ||
-      pressRelease.image ||
-      "/rtl-nederland-press-release.png"
-    : "/placeholder.svg"
+  // Get the best available image URL, prioritizing video thumbnails
+  const imageUrl = (() => {
+    if (!pressRelease) return "/rtl-fallback-image.png"
+
+    // If we have a video, use its thumbnail as the primary image
+    if (videoId) {
+      return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+    }
+
+    // Otherwise, try to get the best quality image from mainImage
+    const mainImageUrl = Object.entries(pressRelease.mainImage || {}).reduce((acc, [key, value]) => {
+      if (acc) return acc // If we already found a valid URL, keep it
+      if (!value || typeof value !== 'string') return acc // Skip if not a string
+      if (value.startsWith('blob:')) return acc // Skip blob: URLs
+      if (['article1920x1080', 'landscape', 'medium16x9', 'article960x540'].includes(key)) return value
+      return acc
+    }, '')
+
+    if (mainImageUrl) return mainImageUrl
+
+    // If no main image, try legacy image field
+    if (pressRelease.image && !pressRelease.image.startsWith('blob:')) return pressRelease.image
+
+    // Fallback to default image
+    return "/rtl-fallback-image.png"
+  })()
 
   // Get the date to display with priority order:
   // 1. Use the formatted date from datePosted if available
@@ -228,6 +247,7 @@ export default function PressReleasePage() {
                   className="w-full h-full object-cover"
                   fallbackSrc="/rtl-fallback-image.png"
                   fallbackComponent={detailFallbackComponent}
+                  priority={true}
                 />
                 {pressRelease.mainImage?.label && (
                   <div className="absolute bottom-4 right-4 bg-black/70 text-white text-xs px-2 py-1 rounded">
