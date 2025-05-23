@@ -73,15 +73,22 @@ export default function PressReleasePage() {
 
       // Update logo colors based on the press release image
       try {
-        const imageUrl =
-          data.mainImage?.article1920x1080 ||
-          data.mainImage?.landscape ||
-          data.mainImage?.medium16x9 ||
-          data.image ||
-          "/rtl-nederland-press-release.png"
+        // Get the best available image URL for color extraction, skipping blob URLs
+        const colorImageUrl = Object.entries(data.mainImage || {}).reduce((acc, [key, value]) => {
+          if (acc) return acc // If we already found a valid URL, keep it
+          if (!value || typeof value !== 'string') return acc // Skip if not a string
+          if (value.startsWith('blob:')) return acc // Skip blob: URLs
+          if (['article1920x1080', 'landscape', 'medium16x9'].includes(key)) return value
+          return acc
+        }, '')
 
-        if (imageUrl) {
-          await updateColorsFromImage(imageUrl)
+        // If we have a video, use its thumbnail
+        const effectiveImageUrl = data.videoId 
+          ? `https://img.youtube.com/vi/${data.videoId}/maxresdefault.jpg`
+          : colorImageUrl || data.image || "/rtl-nederland-press-release.png"
+
+        if (effectiveImageUrl && !effectiveImageUrl.startsWith('blob:')) {
+          await updateColorsFromImage(effectiveImageUrl)
         }
       } catch (colorError) {
         console.error("Failed to update colors from press release image:", colorError)
