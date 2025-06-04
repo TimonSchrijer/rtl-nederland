@@ -138,6 +138,7 @@ export function HeroSection({ pressRelease, disableColorUpdate = false }: HeroSe
               className="w-full h-full object-cover"
               fallbackSrc="/rtl-fallback-image.png"
               fallbackComponent={heroFallbackComponent}
+              priority={true}
             />
           </div>
 

@@ -13,7 +13,7 @@ export async function getPressReleases(offset = 0, limit = 20, forceRefresh = fa
     const now = Date.now()
 
     if (!forceRefresh && cachedData && now - cachedData.timestamp < CLIENT_CACHE_TTL) {
-      console.log(`Using client cache for ${cacheKey}`)
+      // Remove noisy console.log
       return cachedData.data
     }
 
@@ -26,7 +26,7 @@ export async function getPressReleases(offset = 0, limit = 20, forceRefresh = fa
       `/api/press-releases?offset=${offset}&limit=${limit}${forceRefresh ? "&no_cache=true" : ""}`,
       {
         signal: controller.signal,
-        cache: "no-store", // Always bypass browser cache
+        cache: forceRefresh ? "no-store" : "default", // Only bypass cache when forcing refresh
         next: { revalidate: 0 }, // Don't cache this request in Next.js since we're handling caching in the API route
       }
     )
@@ -51,8 +51,10 @@ export async function getPressReleases(offset = 0, limit = 20, forceRefresh = fa
       return []
     }
 
-    // Store in client-side cache
-    clientCache.set(cacheKey, { data: formattedData, timestamp: now })
+    // Only store in client-side cache if not forcing refresh
+    if (!forceRefresh) {
+      clientCache.set(cacheKey, { data: formattedData, timestamp: now })
+    }
 
     return formattedData
   } catch (error) {
@@ -65,15 +67,15 @@ export async function getPressReleases(offset = 0, limit = 20, forceRefresh = fa
 const pressReleaseCache = new Map<string, { data: PressRelease; timestamp: number }>()
 
 // Fetch a specific press release by ID
-export async function getPressReleaseById(id: string): Promise<PressRelease | null> {
+export async function getPressReleaseById(id: string, forceRefresh = false): Promise<PressRelease | null> {
   try {
     // Check client-side cache first
     const cacheKey = `press-release:${id}`
     const cachedData = pressReleaseCache.get(cacheKey)
     const now = Date.now()
 
-    if (cachedData && now - cachedData.timestamp < CLIENT_CACHE_TTL) {
-      console.log(`Using client cache for ${cacheKey}`)
+    if (!forceRefresh && cachedData && now - cachedData.timestamp < CLIENT_CACHE_TTL) {
+      // Remove noisy console.log
       return cachedData.data
     }
 
@@ -84,7 +86,7 @@ export async function getPressReleaseById(id: string): Promise<PressRelease | nu
     // Use our internal API route instead of directly calling the RTL API
     const response = await fetch(`/api/press-releases/${id}`, {
       signal: controller.signal,
-      cache: "no-store", // Always bypass browser cache
+      cache: forceRefresh ? "no-store" : "default", // Only bypass cache when forcing refresh
       next: { revalidate: 0 }, // Don't cache this request in Next.js since we're handling caching in the API route
     })
 
@@ -100,8 +102,10 @@ export async function getPressReleaseById(id: string): Promise<PressRelease | nu
     const data = await response.json()
     const formattedData = formatPressRelease(data)
 
-    // Store in client-side cache
-    pressReleaseCache.set(cacheKey, { data: formattedData, timestamp: now })
+    // Only store in client-side cache if not forcing refresh
+    if (!forceRefresh) {
+      pressReleaseCache.set(cacheKey, { data: formattedData, timestamp: now })
+    }
 
     return formattedData
   } catch (error) {
@@ -158,43 +162,80 @@ export function normalizeCategoryString(category: any): string {
   return categoryString.trim().toLowerCase()
 }
 
-// Update the getImageFromItem function to handle relative URLs
+// Update the getImageFromItem function to handle relative URLs and Prismic URLs
 function getImageFromItem(item: any): string {
   let imageUrl = ""
 
-  // Check for mainImage field with various sizes
+  // Helper function to clean Prismic URLs
+  function cleanPrismicUrl(url: string): string {
+    if (!url) return ""
+    
+    // If it's a Prismic URL with a UUID format, transform it to the CDN URL
+    if (url.includes('prismic.io') && !url.includes('images.prismic.io')) {
+      // Extract the UUID and parameters
+      const [baseUrl, params] = url.split('?')
+      const uuid = baseUrl.split('/').pop()
+      if (uuid) {
+        // Construct the CDN URL
+        return `https://images.prismic.io/rtlnl/${uuid}${params ? `?${params}` : ''}`
+      }
+    }
+    return url
+  }
+
+  // Helper function to get YouTube thumbnail URL
+  function getYouTubeThumbnail(videoId: string): string {
+    if (!videoId) return ""
+    return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+  }
+
+  // First, try to get a YouTube thumbnail if there's a video
+  const { videoId } = extractVideoInfo(item)
+  if (videoId) {
+    imageUrl = getYouTubeThumbnail(videoId)
+    return imageUrl
+  }
+
+  // If no video thumbnail, check for mainImage field with various sizes
   if (item.mainImage) {
     // Use different sizes based on availability
-    imageUrl =
-      item.mainImage.landscape ||
-      item.mainImage.medium16x9 ||
-      item.mainImage.article960x540 ||
-      item.mainImage.small ||
-      item.mainImage.portrait ||
-      item.mainImage.article480x270 ||
-      item.mainImage.article1920x1080 ||
-      ""
+    const mainImageUrl =
+      cleanPrismicUrl(item.mainImage.landscape) ||
+      cleanPrismicUrl(item.mainImage.medium16x9) ||
+      cleanPrismicUrl(item.mainImage.article960x540) ||
+      cleanPrismicUrl(item.mainImage.small) ||
+      cleanPrismicUrl(item.mainImage.portrait) ||
+      cleanPrismicUrl(item.mainImage.article480x270) ||
+      cleanPrismicUrl(item.mainImage.article1920x1080)
+
+    if (mainImageUrl) {
+      imageUrl = mainImageUrl
+    }
   }
 
-  // Check all possible image fields if mainImage didn't provide a URL
+  // If no mainImage, check all possible image fields
   if (!imageUrl) {
-    if (item.image && typeof item.image === "string") imageUrl = item.image
-    else if (item.thumbnail && typeof item.thumbnail === "string") imageUrl = item.thumbnail
-    else if (item.featured_image && typeof item.featured_image === "string") imageUrl = item.featured_image
-    else if (item.hero_image && typeof item.hero_image === "string") imageUrl = item.hero_image
+    const alternativeUrl =
+      (item.image && typeof item.image === "string" && cleanPrismicUrl(item.image)) ||
+      (item.thumbnail && typeof item.thumbnail === "string" && cleanPrismicUrl(item.thumbnail)) ||
+      (item.featured_image && typeof item.featured_image === "string" && cleanPrismicUrl(item.featured_image)) ||
+      (item.hero_image && typeof item.hero_image === "string" && cleanPrismicUrl(item.hero_image))
+
+    if (alternativeUrl) {
+      imageUrl = alternativeUrl
+    }
   }
 
-  // Ensure the URL is absolute
-  if (imageUrl && !imageUrl.startsWith("http") && !imageUrl.startsWith("/")) {
-    imageUrl = "/" + imageUrl
+  // Ensure the URL is absolute and valid
+  if (imageUrl) {
+    if (!imageUrl.startsWith("http") && !imageUrl.startsWith("/")) {
+      imageUrl = "/" + imageUrl
+    }
+    return imageUrl
   }
 
-  // If no image was found, use the fallback
-  if (!imageUrl) {
-    return "/rtl-fallback-image.png"
-  }
-
-  return imageUrl
+  // If no valid image was found, use the fallback
+  return "/rtl-fallback-image.png"
 }
 
 // Function to extract YouTube video ID from various YouTube URL formats
